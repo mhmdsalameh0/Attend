@@ -13,15 +13,17 @@ const prisma = new PrismaClient({
 });
 
 const employees = [
-  { name: "Employee 1", pin: "1111" },
-  { name: "Employee 2", pin: "2222" },
-  { name: "Employee 3", pin: "3333" },
-  { name: "Employee 4", pin: "4444" },
+  { oldName: "Employee 1", name: "Mohammad Ibrahim Kassem", pin: "1111" },
+  { oldName: "Employee 2", name: "Majed Hassan Khaled", pin: "2222" },
+  { oldName: "Employee 3", name: "Abed Mohammad Asfour", pin: "3333" },
+  { oldName: "Employee 4", name: "Mostafa Asfour", pin: "4444" },
 ];
 
 for (const employee of employees) {
   const existing = await prisma.employee.findFirst({
-    where: { name: employee.name },
+    where: {
+      OR: [{ name: employee.name }, { name: employee.oldName }],
+    },
   });
   const pinHash = await bcrypt.hash(employee.pin, 12);
 
@@ -29,6 +31,7 @@ for (const employee of employees) {
     await prisma.employee.update({
       where: { id: existing.id },
       data: {
+        name: employee.name,
         pinHash,
         active: true,
       },
@@ -46,4 +49,4 @@ for (const employee of employees) {
 
 await prisma.$disconnect();
 
-console.log("Seeded 4 placeholder employees.");
+console.log("Seeded 4 employees.");

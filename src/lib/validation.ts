@@ -1,10 +1,11 @@
 import { z } from "zod";
 
-export const pinSchema = z.string().regex(/^\d{4}$/, "يجب أن يتكون الرقم السري من 4 أرقام.");
+export const pinSchema = z.string().regex(/^\d{4}$/, "PIN must contain exactly 4 digits.");
 
 export const attendanceActionSchema = z.object({
-  employeeId: z.string().min(1, "اختر الموظف."),
+  employeeId: z.string().min(1, "Choose an employee."),
   pin: pinSchema,
+  language: z.enum(["en", "ar"]).optional(),
 });
 
 export const loginSchema = z.object({

@@ -139,9 +139,18 @@ export function PublicAttendance({
   const copy = text[language];
 
   useEffect(() => {
+    const savedLanguage = window.localStorage.getItem("attendance-language");
+    if (savedLanguage === "en" || savedLanguage === "ar") {
+      queueMicrotask(() => setLanguage(savedLanguage));
+    }
     const id = window.setInterval(() => setTime(getBeirutTime()), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  function setSavedLanguage(nextLanguage: Language) {
+    setLanguage(nextLanguage);
+    window.localStorage.setItem("attendance-language", nextLanguage);
+  }
 
   const selectedSummary = useMemo(() => {
     if (!selectedEmployee) return "";
@@ -172,7 +181,7 @@ export function PublicAttendance({
       const response = await fetch(`/api/attendance/${action}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employeeId: selectedEmployee.id, pin }),
+        body: JSON.stringify({ employeeId: selectedEmployee.id, pin, language }),
       });
       const result = (await response.json()) as { message?: string; error?: string };
 
@@ -196,14 +205,28 @@ export function PublicAttendance({
               {copy.appName as string}
             </h1>
           </div>
-          <button
-            type="button"
-            onClick={() => setLanguage((current) => (current === "en" ? "ar" : "en"))}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-          >
-            <Languages className="size-4" />
-            {copy.switch as string}
-          </button>
+          <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setSavedLanguage("en")}
+              className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition ${
+                language === "en" ? "bg-slate-950 text-white" : "text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <Languages className="size-4" />
+              English
+            </button>
+            <button
+              type="button"
+              onClick={() => setSavedLanguage("ar")}
+              className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition ${
+                language === "ar" ? "bg-slate-950 text-white" : "text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <Languages className="size-4" />
+              العربية
+            </button>
+          </div>
         </div>
         <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:max-w-md">
           <div className="rounded-2xl bg-slate-50 p-4">

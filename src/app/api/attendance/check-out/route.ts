@@ -6,10 +6,10 @@ export async function POST(request: Request) {
   const parsed = attendanceActionSchema.safeParse(await request.json());
 
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "بيانات غير صالحة." }, { status: 400 });
+    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid data." }, { status: 400 });
   }
 
-  const result = await checkOut(parsed.data.employeeId, parsed.data.pin);
+  const result = await checkOut(parsed.data.employeeId, parsed.data.pin, parsed.data.language ?? "en");
 
   return NextResponse.json(
     result.ok ? { message: result.message } : { error: result.message },

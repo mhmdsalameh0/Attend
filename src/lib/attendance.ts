@@ -8,13 +8,58 @@ import {
   calculateTotalMinutes,
   formatArabicBusinessTime,
   formatBusinessDateTime,
+  formatBusinessTime,
   formatDuration,
   getBusinessDate,
 } from "@/lib/time";
 
-async function verifyPin(employeeId: string, pin: string) {
+type Language = "en" | "ar";
+
+const messages = {
+  en: {
+    locked: "Too many wrong PIN attempts. Please try again later.",
+    inactive: "Employee was not found or is disabled.",
+    wrongPin: "Incorrect PIN.",
+    doubleCheckIn: "You cannot check in twice on the same work date.",
+    checkoutBeforeCheckin: "You cannot check out before checking in.",
+    doubleCheckOut: "You already checked out today.",
+    emailFailed: "Attendance was saved, but the email notification could not be sent.",
+    checkIn: (name: string, time: string) => `${name} checked in at ${time}.`,
+    checkOut: (name: string, time: string, total: string) =>
+      `${name} checked out at ${time}. Total worked time: ${total}.`,
+  },
+  ar: {
+    locked: "تم إيقاف المحاولات مؤقتًا. حاول لاحقًا.",
+    inactive: "الموظف غير موجود أو غير مفعل.",
+    wrongPin: "الرقم السري غير صحيح.",
+    doubleCheckIn: "لا يمكن تسجيل الدخول مرتين في نفس يوم العمل.",
+    checkoutBeforeCheckin: "لا يمكن تسجيل الخروج قبل تسجيل الدخول.",
+    doubleCheckOut: "تم تسجيل الخروج مسبقًا لهذا اليوم.",
+    emailFailed: "تم حفظ العملية، ولكن تعذّر إرسال إشعار الإيميل.",
+    checkIn: (name: string, time: string) => `تم تسجيل دخول ${name} الساعة ${time}.`,
+    checkOut: (name: string, time: string, total: string) =>
+      `تم تسجيل خروج ${name} الساعة ${time}. مجموع وقت العمل: ${total}.`,
+  },
+};
+
+function formatWorkedDuration(minutes: number, language: Language) {
+  if (language === "ar") {
+    return formatDuration(minutes);
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  if (hours === 0) return `${remainingMinutes} minutes`;
+  if (remainingMinutes === 0) return `${hours} hours`;
+  return `${hours} hours ${remainingMinutes} minutes`;
+}
+
+async function verifyPin(employeeId: string, pin: string, language: Language) {
+  const t = messages[language];
+
   if (isPinLocked(employeeId)) {
-    return { ok: false as const, message: "تم إيقاف المحاولات مؤقتاً. حاول لاحقاً." };
+    return { ok: false as const, message: t.locked };
   }
 
   const employee = await prisma.employee.findFirst({
@@ -22,14 +67,14 @@ async function verifyPin(employeeId: string, pin: string) {
   });
 
   if (!employee) {
-    return { ok: false as const, message: "الموظف غير موجود أو غير مفعل." };
+    return { ok: false as const, message: t.inactive };
   }
 
   const pinMatches = await bcrypt.compare(pin, employee.pinHash);
 
   if (!pinMatches) {
     recordFailedPin(employeeId);
-    return { ok: false as const, message: "الرقم السري غير صحيح." };
+    return { ok: false as const, message: t.wrongPin };
   }
 
   clearFailedPin(employeeId);
@@ -91,8 +136,9 @@ export async function getPublicAttendanceSnapshot() {
   });
 }
 
-export async function checkIn(employeeId: string, pin: string) {
-  const verified = await verifyPin(employeeId, pin);
+export async function checkIn(employeeId: string, pin: string, language: Language = "en") {
+  const t = messages[language];
+  const verified = await verifyPin(employeeId, pin, language);
 
   if (!verified.ok) {
     return { ok: false as const, message: verified.message };
@@ -105,7 +151,7 @@ export async function checkIn(employeeId: string, pin: string) {
   });
 
   if (existing) {
-    return { ok: false as const, message: "لا يمكن تسجيل الدخول مرتين في نفس يوم العمل." };
+    return { ok: false as const, message: t.doubleCheckIn };
   }
 
   const lateMinutes = calculateLateMinutes(now);
@@ -130,18 +176,22 @@ export async function checkIn(employeeId: string, pin: string) {
     console.error("Attendance email failed after check-in", error instanceof Error ? error.message : "Unknown error");
     return {
       ok: true as const,
-      message: "تم حفظ العملية، ولكن تعذّر إرسال إشعار الإيميل.",
+      message: t.emailFailed,
     };
   }
 
   return {
     ok: true as const,
-    message: `تم تسجيل دخول ${record.employee.name} الساعة ${formatArabicBusinessTime(record.checkIn)}.`,
+    message: t.checkIn(
+      record.employee.name,
+      language === "ar" ? formatArabicBusinessTime(record.checkIn) : formatBusinessTime(record.checkIn),
+    ),
   };
 }
 
-export async function checkOut(employeeId: string, pin: string) {
-  const verified = await verifyPin(employeeId, pin);
+export async function checkOut(employeeId: string, pin: string, language: Language = "en") {
+  const t = messages[language];
+  const verified = await verifyPin(employeeId, pin, language);
 
   if (!verified.ok) {
     return { ok: false as const, message: verified.message };
@@ -155,11 +205,11 @@ export async function checkOut(employeeId: string, pin: string) {
   });
 
   if (!record) {
-    return { ok: false as const, message: "لا يمكن تسجيل الخروج قبل تسجيل الدخول." };
+    return { ok: false as const, message: t.checkoutBeforeCheckin };
   }
 
   if (record.checkOut) {
-    return { ok: false as const, message: "تم تسجيل الخروج مسبقاً لهذا اليوم." };
+    return { ok: false as const, message: t.doubleCheckOut };
   }
 
   const totalMinutes = calculateTotalMinutes(record.checkIn, now);
@@ -182,13 +232,19 @@ export async function checkOut(employeeId: string, pin: string) {
     console.error("Attendance email failed after check-out", error instanceof Error ? error.message : "Unknown error");
     return {
       ok: true as const,
-      message: "تم حفظ العملية، ولكن تعذّر إرسال إشعار الإيميل.",
+      message: t.emailFailed,
     };
   }
 
   return {
     ok: true as const,
-    message: `تم تسجيل خروج ${updated.employee.name} الساعة ${formatArabicBusinessTime(updated.checkOut ?? now)}. مجموع وقت العمل: ${formatDuration(totalMinutes)}.`,
+    message: t.checkOut(
+      updated.employee.name,
+      language === "ar"
+        ? formatArabicBusinessTime(updated.checkOut ?? now)
+        : formatBusinessTime(updated.checkOut ?? now),
+      formatWorkedDuration(totalMinutes, language),
+    ),
   };
 }
 
