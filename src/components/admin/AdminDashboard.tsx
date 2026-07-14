@@ -287,6 +287,9 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
 
   function notifyPublicAttendancePage() {
     window.localStorage.setItem("attendance-refresh", String(Date.now()));
+    const channel = new BroadcastChannel("attendance-refresh");
+    channel.postMessage({ type: "refresh" });
+    channel.close();
   }
 
   const summary = useMemo(() => {

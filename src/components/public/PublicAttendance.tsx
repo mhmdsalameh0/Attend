@@ -213,6 +213,14 @@ export function PublicAttendance({
   }, [refreshAttendance]);
 
   useEffect(() => {
+    const channel = new BroadcastChannel("attendance-refresh");
+
+    channel.onmessage = () => {
+      refreshAttendance().catch(() => {
+        // The interval refresh will try again shortly.
+      });
+    };
+
     function onStorage(event: StorageEvent) {
       if (event.key !== "attendance-refresh") return;
       refreshAttendance().catch(() => {
@@ -221,7 +229,10 @@ export function PublicAttendance({
     }
 
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    return () => {
+      channel.close();
+      window.removeEventListener("storage", onStorage);
+    };
   }, [refreshAttendance]);
 
   function submit(action: "check-in" | "check-out") {

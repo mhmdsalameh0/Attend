@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { employeeSchema, pinSchema } from "@/lib/validation";
@@ -7,6 +8,9 @@ import { employeeSchema, pinSchema } from "@/lib/validation";
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function PATCH(request: Request, context: RouteContext) {
   if (!(await isAdminAuthenticated())) {
@@ -48,6 +52,8 @@ export async function PATCH(request: Request, context: RouteContext) {
       updatedAt: true,
     },
   });
+
+  revalidatePath("/");
 
   return NextResponse.json({ message: "\u062a\u0645 \u062a\u062d\u062f\u064a\u062b \u0627\u0644\u0645\u0648\u0638\u0641.", employee });
 }
@@ -94,6 +100,8 @@ export async function DELETE(_request: Request, context: RouteContext) {
     prisma.attendance.deleteMany({ where: { employeeId: id } }),
     prisma.employee.delete({ where: { id } }),
   ]);
+
+  revalidatePath("/");
 
   return NextResponse.json({
     message: "\u062a\u0645 \u062d\u0630\u0641 \u0627\u0644\u0645\u0648\u0638\u0641 \u0646\u0647\u0627\u0626\u064a\u064b\u0627.",
