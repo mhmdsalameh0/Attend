@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { Download, Languages, Pencil, Plus, Trash2 } from "lucide-react";
+import { Download, FileText, Languages, Pencil, Plus, Trash2 } from "lucide-react";
 import { LogoutButton } from "@/components/LogoutButton";
 import { Button } from "@/components/ui/Button";
 
@@ -50,6 +50,9 @@ const copy = {
     viewDate: "View date",
     viewMonth: "View month",
     exportCsv: "CSV",
+    exportPdf: "PDF",
+    generatingPdf: "Generating...",
+    exportPdfError: "Could not generate the PDF report.",
     schedule: "Official shift",
     table: [
       "Employee",
@@ -120,6 +123,9 @@ const copy = {
     viewDate: "عرض التاريخ",
     viewMonth: "عرض الشهر",
     exportCsv: "CSV",
+    exportPdf: "PDF",
+    generatingPdf: "\u062c\u0627\u0631\u064a \u0627\u0644\u0625\u0646\u0634\u0627\u0621...",
+    exportPdfError: "\u062a\u0639\u0630\u0651\u0631 \u0625\u0646\u0634\u0627\u0621 \u062a\u0642\u0631\u064a\u0631 PDF.",
     schedule: "\u0627\u0644\u062f\u0648\u0627\u0645 \u0627\u0644\u0631\u0633\u0645\u064a",
     table: [
       "\u0627\u0644\u0645\u0648\u0638\u0641",
@@ -257,11 +263,13 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
   const [records, setRecords] = useState(initialRecords);
   const [date, setDate] = useState(today);
   const [month, setMonth] = useState(today.slice(0, 7));
+  const [filterMode, setFilterMode] = useState<"date" | "month">("date");
   const [employeeId, setEmployeeId] = useState("");
   const [notice, setNotice] = useState("");
   const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
   const [employeeName, setEmployeeName] = useState("");
   const [employeePin, setEmployeePin] = useState("");
+  const [isPdfExporting, setIsPdfExporting] = useState(false);
   const [isPending, startTransition] = useTransition();
   const t = copy[language];
 
@@ -292,6 +300,7 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
   }, [employees.length, records, today]);
 
   async function loadRecords(mode: "date" | "month" = "date") {
+    setFilterMode(mode);
     const params = new URLSearchParams();
     if (employeeId) params.set("employeeId", employeeId);
     if (mode === "month") params.set("month", month);
@@ -423,11 +432,46 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
     });
   }
 
-  const exportHref = `/api/admin/export?${new URLSearchParams({
-    ...(employeeId ? { employeeId } : {}),
-    ...(date ? { date } : {}),
-    language,
-  }).toString()}`;
+  function getExportParams() {
+    const params = new URLSearchParams({ language });
+    if (employeeId) params.set("employeeId", employeeId);
+    if (filterMode === "month" && month) params.set("month", month);
+    if (filterMode === "date" && date) params.set("date", date);
+    return params;
+  }
+
+  async function downloadPdf() {
+    setNotice("");
+    setIsPdfExporting(true);
+    try {
+      const response = await fetch(`/api/admin/export/pdf?${getExportParams().toString()}`);
+
+      if (!response.ok) {
+        const result = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(result?.error ?? t.exportPdfError);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const range = filterMode === "month" ? month : date;
+      link.href = url;
+      link.download =
+        language === "ar"
+          ? `\u062a\u0642\u0631\u064a\u0631-\u0627\u0644\u062d\u0636\u0648\u0631-${range}.pdf`
+          : `attendance-report-${range}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : t.exportPdfError);
+    } finally {
+      setIsPdfExporting(false);
+    }
+  }
+
+  const exportHref = `/api/admin/export?${getExportParams().toString()}`;
 
   return (
     <div dir={language === "ar" ? "rtl" : "ltr"} className={`space-y-6 ${language === "ar" ? "text-right" : "text-left"}`}>
@@ -467,13 +511,17 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto_auto_auto]">
+        <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto_auto_auto_auto]">
           <label className="text-sm">{t.date}<input className="mt-1 h-11 w-full rounded-xl border border-slate-200 px-3" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
           <label className="text-sm">{t.month}<input className="mt-1 h-11 w-full rounded-xl border border-slate-200 px-3" type="month" value={month} onChange={(event) => setMonth(event.target.value)} /></label>
           <label className="text-sm">{t.employee}<select className="mt-1 h-11 w-full rounded-xl border border-slate-200 px-3" value={employeeId} onChange={(event) => setEmployeeId(event.target.value)}><option value="">{t.allEmployees}</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>
           <Button variant="secondary" disabled={isPending} onClick={() => run(() => loadRecords("date"))}>{t.viewDate}</Button>
           <Button variant="secondary" disabled={isPending} onClick={() => run(() => loadRecords("month"))}>{t.viewMonth}</Button>
           <a className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-medium text-white" href={exportHref}><Download className="size-4" />{t.exportCsv}</a>
+          <Button disabled={isPdfExporting} onClick={downloadPdf}>
+            <FileText className="size-4" />
+            {isPdfExporting ? t.generatingPdf : t.exportPdf}
+          </Button>
         </div>
       </section>
 
