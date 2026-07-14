@@ -15,6 +15,8 @@ type EmployeeStatus = {
   checkOut: string | null;
   totalMinutes: number | null;
   lateMinutes: number;
+  missingMinutes: number;
+  overtimeMinutes: number;
 };
 
 type PublicAttendanceProps = {
@@ -40,6 +42,10 @@ const text = {
     in: "Check-in",
     out: "Check-out",
     total: "Total",
+    schedule: "Official shift",
+    lateLabel: "Late",
+    missingTime: "Missing time",
+    overtime: "Overtime",
     empty: "No active employees. Add employees from the admin dashboard or run the seed script.",
     unexpected: "Something went wrong.",
     refreshError: "Could not refresh attendance data.",
@@ -66,6 +72,10 @@ const text = {
     in: "\u0627\u0644\u062f\u062e\u0648\u0644",
     out: "\u0627\u0644\u062e\u0631\u0648\u062c",
     total: "\u0627\u0644\u0625\u062c\u0645\u0627\u0644\u064a",
+    schedule: "\u0627\u0644\u062f\u0648\u0627\u0645 \u0627\u0644\u0631\u0633\u0645\u064a",
+    lateLabel: "\u0627\u0644\u062a\u0623\u062e\u064a\u0631",
+    missingTime: "\u0627\u0644\u0648\u0642\u062a \u0627\u0644\u0646\u0627\u0642\u0635",
+    overtime: "\u0627\u0644\u0648\u0642\u062a \u0627\u0644\u0625\u0636\u0627\u0641\u064a",
     empty: "\u0644\u0627 \u064a\u0648\u062c\u062f \u0645\u0648\u0638\u0641\u0648\u0646 \u0641\u0639\u0627\u0644\u0648\u0646. \u0623\u0636\u0641 \u0627\u0644\u0645\u0648\u0638\u0641\u064a\u0646 \u0645\u0646 \u0644\u0648\u062d\u0629 \u0627\u0644\u0625\u062f\u0627\u0631\u0629 \u0623\u0648 \u0634\u063a\u0651\u0644 \u0627\u0644\u0628\u0630\u0631.",
     unexpected: "\u062d\u062f\u062b \u062e\u0637\u0623 \u063a\u064a\u0631 \u0645\u062a\u0648\u0642\u0639.",
     refreshError: "\u062a\u0639\u0630\u0651\u0631 \u062a\u062d\u062f\u064a\u062b \u0628\u064a\u0627\u0646\u0627\u062a \u0627\u0644\u062d\u0636\u0648\u0631.",
@@ -105,11 +115,30 @@ function formatDuration(minutes: number | null, language: Language) {
 
   if (language === "ar") {
     if (hours === 0) return `${mins} \u062f\u0642\u064a\u0642\u0629`;
-    return mins === 0 ? `${hours} \u0633\u0627\u0639\u0627\u062a` : `${hours} \u0633\u0627\u0639\u0627\u062a \u0648${mins} \u062f\u0642\u064a\u0642\u0629`;
+    const hourText =
+      hours === 1 ? "\u0633\u0627\u0639\u0629" : hours === 2 ? "\u0633\u0627\u0639\u062a\u0627\u0646" : `${hours} \u0633\u0627\u0639\u0627\u062a`;
+    return mins === 0 ? hourText : `${hourText} \u0648${mins} \u062f\u0642\u064a\u0642\u0629`;
   }
 
+  const hourUnit = hours === 1 ? "hr" : "hrs";
   if (hours === 0) return `${mins} min`;
-  return mins === 0 ? `${hours} hr` : `${hours} hr ${mins} min`;
+  return mins === 0 ? `${hours} ${hourUnit}` : `${hours} ${hourUnit} ${mins} min`;
+}
+
+function getScheduleLabel(language: Language) {
+  return language === "ar"
+    ? "8:30 \u0635\u0628\u0627\u062d\u064b\u0627 \u0625\u0644\u0649 6:00 \u0645\u0633\u0627\u0621\u064b"
+    : "8:30 AM to 6:00 PM";
+}
+
+function formatDisplayTime(value: string | null, language: Language) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat(language === "ar" ? "ar-LB" : "en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Beirut",
+  }).format(new Date(value));
 }
 
 function getBeirutTime() {
@@ -154,10 +183,10 @@ export function PublicAttendance({
 
   const selectedSummary = useMemo(() => {
     if (!selectedEmployee) return "";
-    if (selectedEmployee.checkOut) return `${copy.out}: ${selectedEmployee.checkOut}`;
-    if (selectedEmployee.checkIn) return `${copy.in}: ${selectedEmployee.checkIn}`;
+    if (selectedEmployee.checkOut) return `${copy.out}: ${formatDisplayTime(selectedEmployee.checkOut, language)}`;
+    if (selectedEmployee.checkIn) return `${copy.in}: ${formatDisplayTime(selectedEmployee.checkIn, language)}`;
     return copy.noRecord as string;
-  }, [copy.in, copy.noRecord, copy.out, selectedEmployee]);
+  }, [copy.in, copy.noRecord, copy.out, language, selectedEmployee]);
 
   async function refreshAttendance() {
     const response = await fetch("/api/attendance/status", { cache: "no-store" });
@@ -228,7 +257,7 @@ export function PublicAttendance({
             </button>
           </div>
         </div>
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:max-w-md">
+        <div className="mt-6 grid gap-3 sm:grid-cols-3 lg:max-w-2xl">
           <div className="rounded-2xl bg-slate-50 p-4">
             <p className="text-xs font-medium text-slate-500">{copy.date}</p>
             <p className="mt-1 text-lg font-semibold">{initialDate}</p>
@@ -236,6 +265,10 @@ export function PublicAttendance({
           <div className="rounded-2xl bg-emerald-50 p-4 text-emerald-900">
             <p className="text-xs font-medium text-emerald-700">{copy.now}</p>
             <p className="mt-1 text-lg font-semibold">{time}</p>
+          </div>
+          <div className="rounded-2xl bg-blue-50 p-4 text-blue-950">
+            <p className="text-xs font-medium text-blue-700">{copy.schedule}</p>
+            <p className="mt-1 text-lg font-semibold">{getScheduleLabel(language)}</p>
           </div>
         </div>
       </header>
@@ -274,11 +307,20 @@ export function PublicAttendance({
             </div>
             <h2 className="mt-6 text-xl font-semibold text-slate-950">{employee.name}</h2>
             <div className="mt-4 space-y-2 text-sm text-slate-500">
-              <p>{copy.in as string}: {employee.checkIn ?? "-"}</p>
-              <p>{copy.out as string}: {employee.checkOut ?? "-"}</p>
+              <p>{copy.in as string}: {formatDisplayTime(employee.checkIn, language)}</p>
+              <p>{copy.out as string}: {formatDisplayTime(employee.checkOut, language)}</p>
+              {employee.lateMinutes > 0 ? (
+                <p>{copy.lateLabel as string}: {formatDuration(employee.lateMinutes, language)}</p>
+              ) : null}
               {employee.totalMinutes == null ? null : (
                 <p>{copy.total as string}: {formatDuration(employee.totalMinutes, language)}</p>
               )}
+              {employee.missingMinutes > 0 ? (
+                <p>{copy.missingTime as string}: {formatDuration(employee.missingMinutes, language)}</p>
+              ) : null}
+              {employee.overtimeMinutes > 0 ? (
+                <p>{copy.overtime as string}: {formatDuration(employee.overtimeMinutes, language)}</p>
+              ) : null}
             </div>
           </button>
         ))}

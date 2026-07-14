@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { AdminDashboard } from "@/components/admin/AdminDashboard";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getBusinessDate } from "@/lib/time";
+import { calculateLateMinutes, calculateMissingMinutes, calculateOvertimeMinutes, getBusinessDate } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +35,9 @@ export default async function AdminPage() {
             ...record,
             checkIn: record.checkIn.toISOString(),
             checkOut: record.checkOut?.toISOString() ?? null,
+            computedLateMinutes: calculateLateMinutes(record.checkIn),
+            missingMinutes: record.checkOut ? calculateMissingMinutes(record.checkOut) : null,
+            overtimeMinutes: record.checkOut ? calculateOvertimeMinutes(record.checkOut) : null,
             createdAt: record.createdAt.toISOString(),
             updatedAt: record.updatedAt.toISOString(),
           }))}

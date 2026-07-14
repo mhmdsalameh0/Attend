@@ -21,6 +21,9 @@ type AttendanceRecord = {
   checkOut: string | null;
   totalMinutes: number | null;
   lateMinutes: number;
+  computedLateMinutes: number;
+  missingMinutes: number | null;
+  overtimeMinutes: number | null;
   status: "ON_TIME" | "LATE";
   note: string | null;
   employee: Employee;
@@ -47,7 +50,20 @@ const copy = {
     viewDate: "View date",
     viewMonth: "View month",
     exportCsv: "CSV",
-    table: ["Employee", "Date", "Check-in", "Check-out", "Total hours", "Late minutes", "Status", "Notes", "Actions"],
+    schedule: "Official shift",
+    table: [
+      "Employee",
+      "Date",
+      "Check-in",
+      "Check-out",
+      "Total hours",
+      "Late",
+      "Missing time",
+      "Overtime",
+      "Status",
+      "Notes",
+      "Actions",
+    ],
     noRecords: "No matching attendance records.",
     onTime: "On time",
     late: "Late",
@@ -98,7 +114,20 @@ const copy = {
     viewDate: "عرض التاريخ",
     viewMonth: "عرض الشهر",
     exportCsv: "CSV",
-    table: ["الموظف", "التاريخ", "الدخول", "الخروج", "إجمالي الساعات", "دقائق التأخير", "الحالة", "الملاحظات", "الإجراءات"],
+    schedule: "\u0627\u0644\u062f\u0648\u0627\u0645 \u0627\u0644\u0631\u0633\u0645\u064a",
+    table: [
+      "\u0627\u0644\u0645\u0648\u0638\u0641",
+      "\u0627\u0644\u062a\u0627\u0631\u064a\u062e",
+      "\u0627\u0644\u062f\u062e\u0648\u0644",
+      "\u0627\u0644\u062e\u0631\u0648\u062c",
+      "\u0645\u062c\u0645\u0648\u0639 \u0633\u0627\u0639\u0627\u062a \u0627\u0644\u0639\u0645\u0644",
+      "\u0627\u0644\u062a\u0623\u062e\u064a\u0631",
+      "\u0627\u0644\u0648\u0642\u062a \u0627\u0644\u0646\u0627\u0642\u0635",
+      "\u0627\u0644\u0648\u0642\u062a \u0627\u0644\u0625\u0636\u0627\u0641\u064a",
+      "\u0627\u0644\u062d\u0627\u0644\u0629",
+      "\u0627\u0644\u0645\u0644\u0627\u062d\u0638\u0627\u062a",
+      "\u0627\u0644\u0625\u062c\u0631\u0627\u0621\u0627\u062a",
+    ],
     noRecords: "لا توجد سجلات مطابقة.",
     onTime: "في الوقت",
     late: "متأخر",
@@ -138,14 +167,66 @@ const copy = {
 };
 
 function formatDateTimeForInput(value: string | null) {
-  return value ? new Date(value).toISOString().slice(0, 16) : "";
+  if (!value) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Beirut",
+  }).formatToParts(new Date(value));
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${byType.year}-${byType.month}-${byType.day}T${byType.hour}:${byType.minute}`;
 }
 
-function formatMinutes(minutes: number | null) {
+function getBeirutOffsetMinutes(date: Date) {
+  const offsetName =
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Beirut",
+      timeZoneName: "shortOffset",
+    })
+      .formatToParts(date)
+      .find((part) => part.type === "timeZoneName")?.value ?? "GMT+0";
+  const match = offsetName.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+  if (!match) return 0;
+  const sign = match[1] === "-" ? -1 : 1;
+  const hours = Number(match[2]);
+  const minutes = Number(match[3] ?? "0");
+  return sign * (hours * 60 + minutes);
+}
+
+function beirutInputToIso(value: string) {
+  const [datePart, timePart] = value.split("T");
+  const [year, month, day] = datePart.split("-").map(Number);
+  const [hour, minute] = timePart.split(":").map(Number);
+  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute));
+  const offsetMinutes = getBeirutOffsetMinutes(utcGuess);
+  return new Date(Date.UTC(year, month - 1, day, hour, minute) - offsetMinutes * 60_000).toISOString();
+}
+
+function formatDuration(minutes: number | null, language: Language) {
   if (minutes == null) return "-";
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
-  return `${hours}:${String(mins).padStart(2, "0")}`;
+
+  if (language === "ar") {
+    if (hours === 0) return `${mins} \u062f\u0642\u064a\u0642\u0629`;
+    const hourText =
+      hours === 1 ? "\u0633\u0627\u0639\u0629" : hours === 2 ? "\u0633\u0627\u0639\u062a\u0627\u0646" : `${hours} \u0633\u0627\u0639\u0627\u062a`;
+    return mins === 0 ? hourText : `${hourText} \u0648${mins} \u062f\u0642\u064a\u0642\u0629`;
+  }
+
+  const hourUnit = hours === 1 ? "hr" : "hrs";
+  if (hours === 0) return `${mins} min`;
+  return mins === 0 ? `${hours} ${hourUnit}` : `${hours} ${hourUnit} ${mins} min`;
+}
+
+function getScheduleLabel(language: Language) {
+  return language === "ar"
+    ? "8:30 \u0635\u0628\u0627\u062d\u064b\u0627 \u0625\u0644\u0649 6:00 \u0645\u0633\u0627\u0621\u064b"
+    : "8:30 AM to 6:00 PM";
 }
 
 function formatDisplayTime(value: string | null, language: Language) {
@@ -189,7 +270,7 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
     return {
       employees: employees.length,
       present: todayRecords.filter((record) => record.checkIn && !record.checkOut).length,
-      late: todayRecords.filter((record) => record.lateMinutes > 0).length,
+      late: todayRecords.filter((record) => record.computedLateMinutes > 0).length,
       finished: todayRecords.filter((record) => record.checkOut).length,
     };
   }, [employees.length, records, today]);
@@ -234,8 +315,8 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          checkIn: new Date(checkInInput.value).toISOString(),
-          checkOut: checkOutInput.value ? new Date(checkOutInput.value).toISOString() : null,
+          checkIn: beirutInputToIso(checkInInput.value),
+          checkOut: checkOutInput.value ? beirutInputToIso(checkOutInput.value) : null,
           note: noteInput.value || null,
         }),
       });
@@ -308,6 +389,7 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
   const exportHref = `/api/admin/export?${new URLSearchParams({
     ...(employeeId ? { employeeId } : {}),
     ...(date ? { date } : {}),
+    language,
   }).toString()}`;
 
   return (
@@ -342,6 +424,11 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
         ))}
       </section>
 
+      <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+        <p className="text-sm font-medium text-slate-500">{t.schedule}</p>
+        <p className="mt-1 text-lg font-semibold text-slate-950">{getScheduleLabel(language)}</p>
+      </section>
+
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto_auto_auto]">
           <label className="text-sm">{t.date}<input className="mt-1 h-11 w-full rounded-xl border border-slate-200 px-3" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
@@ -355,7 +442,7 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-sm">
+          <table className="w-full min-w-[1180px] text-sm">
             <thead className="bg-slate-50 text-slate-500"><tr>{t.table.map((heading) => <th key={heading} className="px-4 py-3 font-semibold">{heading}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
               {records.map((record) => (
@@ -364,14 +451,16 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
                   <td className="px-4 py-3">{record.workDate}</td>
                   <td className="px-4 py-3">{formatDisplayTime(record.checkIn, language)}</td>
                   <td className="px-4 py-3">{formatDisplayTime(record.checkOut, language)}</td>
-                  <td className="px-4 py-3">{formatMinutes(record.totalMinutes)}</td>
-                  <td className="px-4 py-3">{record.lateMinutes}</td>
+                  <td className="px-4 py-3">{formatDuration(record.totalMinutes, language)}</td>
+                  <td className="px-4 py-3">{formatDuration(record.computedLateMinutes, language)}</td>
+                  <td className="px-4 py-3">{formatDuration(record.missingMinutes, language)}</td>
+                  <td className="px-4 py-3">{formatDuration(record.overtimeMinutes, language)}</td>
                   <td className="px-4 py-3">{record.status === "LATE" ? t.late : t.onTime}</td>
                   <td className="px-4 py-3">{record.note ?? "-"}</td>
                   <td className="px-4 py-3"><div className="flex gap-2"><button className="rounded-lg p-2 text-slate-600 hover:bg-slate-100" onClick={() => setEditingRecord(record)} aria-label={t.edit}><Pencil className="size-4" /></button><button className="rounded-lg p-2 text-red-600 hover:bg-red-50" onClick={() => deleteRecord(record)} aria-label={t.deleteRecordError}><Trash2 className="size-4" /></button></div></td>
                 </tr>
               ))}
-              {records.length === 0 ? <tr><td className="px-4 py-10 text-center text-slate-500" colSpan={9}>{t.noRecords}</td></tr> : null}
+              {records.length === 0 ? <tr><td className="px-4 py-10 text-center text-slate-500" colSpan={11}>{t.noRecords}</td></tr> : null}
             </tbody>
           </table>
         </div>

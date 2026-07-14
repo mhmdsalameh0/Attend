@@ -5,6 +5,8 @@ import { sendCheckInEmail, sendCheckOutEmail } from "@/lib/email";
 import { clearFailedPin, isPinLocked, recordFailedPin } from "@/lib/rate-limit";
 import {
   calculateLateMinutes,
+  calculateMissingMinutes,
+  calculateOvertimeMinutes,
   calculateTotalMinutes,
   formatArabicBusinessTime,
   formatBusinessDateTime,
@@ -41,19 +43,6 @@ const messages = {
       `تم تسجيل خروج ${name} الساعة ${time}. مجموع وقت العمل: ${total}.`,
   },
 };
-
-function formatWorkedDuration(minutes: number, language: Language) {
-  if (language === "ar") {
-    return formatDuration(minutes);
-  }
-
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-
-  if (hours === 0) return `${remainingMinutes} minutes`;
-  if (remainingMinutes === 0) return `${hours} hours`;
-  return `${hours} hours ${remainingMinutes} minutes`;
-}
 
 async function verifyPin(employeeId: string, pin: string, language: Language) {
   const t = messages[language];
@@ -104,8 +93,6 @@ export async function getPublicAttendanceSnapshot() {
         select: {
           checkIn: true,
           checkOut: true,
-          lateMinutes: true,
-          status: true,
           totalMinutes: true,
         },
       },
@@ -114,11 +101,12 @@ export async function getPublicAttendanceSnapshot() {
 
   return employees.map((employee) => {
     const today = employee.attendance[0];
+    const lateMinutes = today?.checkIn ? calculateLateMinutes(today.checkIn) : 0;
     let status: "not_started" | "present" | "finished" | "late" = "not_started";
 
     if (today?.checkOut) {
       status = "finished";
-    } else if (today?.lateMinutes && today.lateMinutes > 0) {
+    } else if (lateMinutes > 0) {
       status = "late";
     } else if (today?.checkIn) {
       status = "present";
@@ -128,10 +116,12 @@ export async function getPublicAttendanceSnapshot() {
       id: employee.id,
       name: employee.name,
       status,
-      checkIn: today?.checkIn ? formatArabicBusinessTime(today.checkIn) : null,
-      checkOut: today?.checkOut ? formatArabicBusinessTime(today.checkOut) : null,
+      checkIn: today?.checkIn ? today.checkIn.toISOString() : null,
+      checkOut: today?.checkOut ? today.checkOut.toISOString() : null,
       totalMinutes: today?.totalMinutes ?? null,
-      lateMinutes: today?.lateMinutes ?? 0,
+      lateMinutes,
+      missingMinutes: today?.checkOut ? calculateMissingMinutes(today.checkOut) : 0,
+      overtimeMinutes: today?.checkOut ? calculateOvertimeMinutes(today.checkOut) : 0,
     };
   });
 }
@@ -170,7 +160,7 @@ export async function checkIn(employeeId: string, pin: string, language: Languag
     await sendCheckInEmail({
       employeeName: record.employee.name,
       when: formatBusinessDateTime(record.checkIn),
-      status: record.status === AttendanceStatus.ON_TIME ? "On time" : `Late by ${lateMinutes} minutes`,
+      status: record.status === AttendanceStatus.ON_TIME ? "On time" : `Late by ${formatDuration(lateMinutes, "en")}`,
     });
   } catch (error) {
     console.error("Attendance email failed after check-in", error instanceof Error ? error.message : "Unknown error");
@@ -226,7 +216,7 @@ export async function checkOut(employeeId: string, pin: string, language: Langua
     await sendCheckOutEmail({
       employeeName: updated.employee.name,
       when: formatBusinessDateTime(updated.checkOut ?? now),
-      totalWorked: formatDuration(totalMinutes),
+      totalWorked: formatDuration(totalMinutes, "en"),
     });
   } catch (error) {
     console.error("Attendance email failed after check-out", error instanceof Error ? error.message : "Unknown error");
@@ -243,7 +233,7 @@ export async function checkOut(employeeId: string, pin: string, language: Langua
       language === "ar"
         ? formatArabicBusinessTime(updated.checkOut ?? now)
         : formatBusinessTime(updated.checkOut ?? now),
-      formatWorkedDuration(totalMinutes, language),
+      formatDuration(totalMinutes, language),
     ),
   };
 }

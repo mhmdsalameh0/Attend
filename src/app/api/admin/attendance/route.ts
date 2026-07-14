@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { isAdminAuthenticated } from "@/lib/auth";
+import { calculateLateMinutes, calculateMissingMinutes, calculateOvertimeMinutes } from "@/lib/time";
 
 export async function GET(request: Request) {
   if (!(await isAdminAuthenticated())) {
@@ -24,5 +25,12 @@ export async function GET(request: Request) {
     take: 300,
   });
 
-  return NextResponse.json({ records });
+  return NextResponse.json({
+    records: records.map((record) => ({
+      ...record,
+      computedLateMinutes: calculateLateMinutes(record.checkIn),
+      missingMinutes: record.checkOut ? calculateMissingMinutes(record.checkOut) : null,
+      overtimeMinutes: record.checkOut ? calculateOvertimeMinutes(record.checkOut) : null,
+    })),
+  });
 }
