@@ -77,6 +77,7 @@ const copy = {
     edit: "Edit",
     enable: "Enable",
     disable: "Disable",
+    deleteEmployee: "Delete",
     changePin: "Change PIN",
     editRecord: "Edit attendance record",
     checkInTime: "Check-in time",
@@ -94,10 +95,13 @@ const copy = {
     deleteRecordError: "Could not delete the record.",
     saveEmployeeError: "Could not save employee.",
     toggleEmployeeError: "Could not change employee status.",
+    deleteEmployeeError: "Could not delete employee.",
     changePinError: "Could not change employee PIN.",
+    deleteEmployeeConfirm: "Delete employee",
     updated: "Record updated.",
     deleted: "Record deleted.",
     employeeSaved: "Employee saved.",
+    employeeDeleted: "Employee deleted.",
     pinChanged: "PIN changed.",
   },
   ar: {
@@ -141,6 +145,7 @@ const copy = {
     edit: "تعديل",
     enable: "تفعيل",
     disable: "تعطيل",
+    deleteEmployee: "حذف",
     changePin: "تغيير PIN",
     editRecord: "تعديل سجل الحضور",
     checkInTime: "وقت الدخول",
@@ -158,10 +163,13 @@ const copy = {
     deleteRecordError: "تعذّر حذف السجل.",
     saveEmployeeError: "تعذّر حفظ الموظف.",
     toggleEmployeeError: "تعذّر تغيير حالة الموظف.",
+    deleteEmployeeError: "تعذّر حذف الموظف.",
     changePinError: "تعذّر تغيير الرقم السري.",
+    deleteEmployeeConfirm: "حذف الموظف",
     updated: "تم تحديث السجل.",
     deleted: "تم حذف السجل.",
     employeeSaved: "تم حفظ الموظف.",
+    employeeDeleted: "تم حذف الموظف.",
     pinChanged: "تم تغيير الرقم السري.",
   },
 };
@@ -371,6 +379,18 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
     });
   }
 
+  function deleteEmployee(employee: Employee) {
+    if (!window.confirm(`${t.deleteEmployeeConfirm} ${employee.name}?`)) return;
+    run(async () => {
+      const response = await fetch(`/api/admin/employees/${employee.id}`, { method: "DELETE" });
+      const result = (await response.json()) as { message?: string; error?: string };
+      if (!response.ok) throw new Error(result.error ?? t.deleteEmployeeError);
+      setNotice(result.message ?? t.employeeDeleted);
+      await loadEmployees();
+      await loadRecords();
+    });
+  }
+
   function changeEmployeePin(employee: Employee) {
     const pin = window.prompt(`${t.promptPin} ${employee.name}`);
     if (!pin) return;
@@ -477,11 +497,15 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
           <h2 className="text-lg font-semibold">{t.manageEmployees}</h2>
           <div className="mt-4 divide-y divide-slate-100">
             {employees.map((employee) => (
-              <div key={employee.id} className="grid gap-3 py-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center">
+              <div key={employee.id} className="grid gap-3 py-3 sm:grid-cols-[1fr_auto_auto_auto_auto] sm:items-center">
                 <div><p className="font-semibold">{employee.name}</p><p className="text-sm text-slate-500">{employee.active ? t.active : t.disabled}</p></div>
                 <Button variant="secondary" disabled={isPending} onClick={() => { const name = window.prompt(t.promptName, employee.name); if (name) { setEmployeeName(name); setEmployeePin(""); saveEmployee({ ...employee, name }); } }}>{t.edit}</Button>
                 <Button variant="secondary" disabled={isPending} onClick={() => toggleEmployee(employee)}>{employee.active ? t.disable : t.enable}</Button>
                 <Button variant="secondary" disabled={isPending} onClick={() => changeEmployeePin(employee)}>{t.changePin}</Button>
+                <Button variant="secondary" className="border-red-200 text-red-700 hover:bg-red-50" disabled={isPending} onClick={() => deleteEmployee(employee)}>
+                  <Trash2 className="size-4" />
+                  {t.deleteEmployee}
+                </Button>
               </div>
             ))}
           </div>

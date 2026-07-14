@@ -68,3 +68,23 @@ export async function PUT(request: Request, context: RouteContext) {
 
   return NextResponse.json({ message: "تم تغيير الرقم السري." });
 }
+
+export async function DELETE(_request: Request, context: RouteContext) {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json({ error: "غير مصرح." }, { status: 401 });
+  }
+
+  const { id } = await context.params;
+  const attendanceCount = await prisma.attendance.count({ where: { employeeId: id } });
+
+  if (attendanceCount > 0) {
+    return NextResponse.json(
+      { error: "لا يمكن حذف موظف لديه سجلات حضور. يمكنك تعطيله بدلًا من الحذف." },
+      { status: 400 },
+    );
+  }
+
+  await prisma.employee.delete({ where: { id } });
+
+  return NextResponse.json({ message: "تم حذف الموظف." });
+}
