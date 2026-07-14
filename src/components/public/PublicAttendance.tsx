@@ -198,11 +198,17 @@ export function PublicAttendance({
 
     setEmployees(result.employees);
     setSelectedEmployee((current) =>
-      current ? result.employees?.find((employee) => employee.id === current.id) ?? current : current,
+      current ? result.employees?.find((employee) => employee.id === current.id) ?? null : current,
     );
   }, [copy.refreshError]);
 
   useEffect(() => {
+    queueMicrotask(() => {
+      refreshAttendance().catch(() => {
+        // The interval refresh will try again shortly.
+      });
+    });
+
     const id = window.setInterval(() => {
       refreshAttendance().catch(() => {
         // Keep the public screen quiet if a background refresh briefly fails.
@@ -213,13 +219,15 @@ export function PublicAttendance({
   }, [refreshAttendance]);
 
   useEffect(() => {
-    const channel = new BroadcastChannel("attendance-refresh");
+    const channel = "BroadcastChannel" in window ? new BroadcastChannel("attendance-refresh") : null;
 
-    channel.onmessage = () => {
-      refreshAttendance().catch(() => {
-        // The interval refresh will try again shortly.
-      });
-    };
+    if (channel) {
+      channel.onmessage = () => {
+        refreshAttendance().catch(() => {
+          // The interval refresh will try again shortly.
+        });
+      };
+    }
 
     function onStorage(event: StorageEvent) {
       if (event.key !== "attendance-refresh") return;
@@ -230,7 +238,7 @@ export function PublicAttendance({
 
     window.addEventListener("storage", onStorage);
     return () => {
-      channel.close();
+      channel?.close();
       window.removeEventListener("storage", onStorage);
     };
   }, [refreshAttendance]);
