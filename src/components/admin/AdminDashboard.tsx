@@ -99,8 +99,7 @@ const copy = {
     changePinError: "Could not change employee PIN.",
     deleteEmployeeConfirm: "Delete employee?",
     deleteEmployeeWarning: "This action cannot be undone.",
-    deleteEmployeeRecordsWarning: "If attendance records exist, deletion will be blocked to protect attendance history.",
-    deleteEmployeeHasRecords: "This employee has linked attendance records, so deletion was blocked. Disable the employee instead if you need to hide them.",
+    deleteEmployeeRecordsWarning: "Linked attendance records for this employee will also be permanently deleted.",
     updated: "Record updated.",
     deleted: "Record deleted.",
     employeeSaved: "Employee saved.",
@@ -170,8 +169,7 @@ const copy = {
     changePinError: "تعذّر تغيير الرقم السري.",
     deleteEmployeeConfirm: "هل تريد حذف الموظف؟",
     deleteEmployeeWarning: "لا يمكن التراجع عن هذا الإجراء.",
-    deleteEmployeeRecordsWarning: "إذا كانت هناك سجلات حضور مرتبطة، سيتم منع الحذف لحماية السجل.",
-    deleteEmployeeHasRecords: "لدى هذا الموظف سجلات حضور مرتبطة، لذلك تم منع الحذف. يمكنك تعطيله بدلًا من الحذف.",
+    deleteEmployeeRecordsWarning: "سيتم أيضًا حذف سجلات الحضور المرتبطة بهذا الموظف نهائيًا.",
     updated: "تم تحديث السجل.",
     deleted: "تم حذف السجل.",
     employeeSaved: "تم حفظ الموظف.",
@@ -401,7 +399,7 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
       const response = await fetch(`/api/admin/employees/${employee.id}`, { method: "DELETE" });
       const result = (await response.json()) as { message?: string; error?: string };
       if (!response.ok) {
-        throw new Error(response.status === 400 ? t.deleteEmployeeHasRecords : result.error ?? t.deleteEmployeeError);
+        throw new Error(result.error ?? t.deleteEmployeeError);
       }
       setNotice(result.message ?? t.employeeDeleted);
       await loadEmployees();

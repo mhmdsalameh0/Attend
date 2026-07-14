@@ -10,13 +10,16 @@ type RouteContext = {
 
 export async function PATCH(request: Request, context: RouteContext) {
   if (!(await isAdminAuthenticated())) {
-    return NextResponse.json({ error: "غير مصرح." }, { status: 401 });
+    return NextResponse.json({ error: "\u063a\u064a\u0631 \u0645\u0635\u0631\u062d." }, { status: 401 });
   }
 
   const parsed = employeeSchema.partial().safeParse(await request.json());
 
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "بيانات غير صالحة." }, { status: 400 });
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? "\u0628\u064a\u0627\u0646\u0627\u062a \u063a\u064a\u0631 \u0635\u0627\u0644\u062d\u0629." },
+      { status: 400 },
+    );
   }
 
   const { id } = await context.params;
@@ -46,18 +49,21 @@ export async function PATCH(request: Request, context: RouteContext) {
     },
   });
 
-  return NextResponse.json({ message: "تم تحديث الموظف.", employee });
+  return NextResponse.json({ message: "\u062a\u0645 \u062a\u062d\u062f\u064a\u062b \u0627\u0644\u0645\u0648\u0638\u0641.", employee });
 }
 
 export async function PUT(request: Request, context: RouteContext) {
   if (!(await isAdminAuthenticated())) {
-    return NextResponse.json({ error: "غير مصرح." }, { status: 401 });
+    return NextResponse.json({ error: "\u063a\u064a\u0631 \u0645\u0635\u0631\u062d." }, { status: 401 });
   }
 
   const parsed = pinSchema.safeParse((await request.json()).pin);
 
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "رقم سري غير صالح." }, { status: 400 });
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? "\u0631\u0642\u0645 \u0633\u0631\u064a \u063a\u064a\u0631 \u0635\u0627\u0644\u062d." },
+      { status: 400 },
+    );
   }
 
   const { id } = await context.params;
@@ -66,25 +72,31 @@ export async function PUT(request: Request, context: RouteContext) {
     data: { pinHash: await bcrypt.hash(parsed.data, 12) },
   });
 
-  return NextResponse.json({ message: "تم تغيير الرقم السري." });
+  return NextResponse.json({ message: "\u062a\u0645 \u062a\u063a\u064a\u064a\u0631 \u0627\u0644\u0631\u0642\u0645 \u0627\u0644\u0633\u0631\u064a." });
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {
   if (!(await isAdminAuthenticated())) {
-    return NextResponse.json({ error: "غير مصرح." }, { status: 401 });
+    return NextResponse.json({ error: "\u063a\u064a\u0631 \u0645\u0635\u0631\u062d." }, { status: 401 });
   }
 
   const { id } = await context.params;
-  const attendanceCount = await prisma.attendance.count({ where: { employeeId: id } });
+  const employee = await prisma.employee.findUnique({
+    where: { id },
+    select: { id: true },
+  });
 
-  if (attendanceCount > 0) {
-    return NextResponse.json(
-      { error: "لا يمكن حذف موظف لديه سجلات حضور. يمكنك تعطيله بدلًا من الحذف." },
-      { status: 400 },
-    );
+  if (!employee) {
+    return NextResponse.json({ error: "\u0627\u0644\u0645\u0648\u0638\u0641 \u063a\u064a\u0631 \u0645\u0648\u062c\u0648\u062f." }, { status: 404 });
   }
 
-  await prisma.employee.delete({ where: { id } });
+  const [deletedAttendance] = await prisma.$transaction([
+    prisma.attendance.deleteMany({ where: { employeeId: id } }),
+    prisma.employee.delete({ where: { id } }),
+  ]);
 
-  return NextResponse.json({ message: "تم حذف الموظف." });
+  return NextResponse.json({
+    message: "\u062a\u0645 \u062d\u0630\u0641 \u0627\u0644\u0645\u0648\u0638\u0641 \u0646\u0647\u0627\u0626\u064a\u064b\u0627.",
+    deletedAttendanceRecords: deletedAttendance.count,
+  });
 }
