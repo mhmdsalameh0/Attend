@@ -97,7 +97,10 @@ const copy = {
     toggleEmployeeError: "Could not change employee status.",
     deleteEmployeeError: "Could not delete employee.",
     changePinError: "Could not change employee PIN.",
-    deleteEmployeeConfirm: "Delete employee",
+    deleteEmployeeConfirm: "Delete employee?",
+    deleteEmployeeWarning: "This action cannot be undone.",
+    deleteEmployeeRecordsWarning: "If attendance records exist, deletion will be blocked to protect attendance history.",
+    deleteEmployeeHasRecords: "This employee has linked attendance records, so deletion was blocked. Disable the employee instead if you need to hide them.",
     updated: "Record updated.",
     deleted: "Record deleted.",
     employeeSaved: "Employee saved.",
@@ -165,7 +168,10 @@ const copy = {
     toggleEmployeeError: "تعذّر تغيير حالة الموظف.",
     deleteEmployeeError: "تعذّر حذف الموظف.",
     changePinError: "تعذّر تغيير الرقم السري.",
-    deleteEmployeeConfirm: "حذف الموظف",
+    deleteEmployeeConfirm: "هل تريد حذف الموظف؟",
+    deleteEmployeeWarning: "لا يمكن التراجع عن هذا الإجراء.",
+    deleteEmployeeRecordsWarning: "إذا كانت هناك سجلات حضور مرتبطة، سيتم منع الحذف لحماية السجل.",
+    deleteEmployeeHasRecords: "لدى هذا الموظف سجلات حضور مرتبطة، لذلك تم منع الحذف. يمكنك تعطيله بدلًا من الحذف.",
     updated: "تم تحديث السجل.",
     deleted: "تم حذف السجل.",
     employeeSaved: "تم حفظ الموظف.",
@@ -273,6 +279,10 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
     window.localStorage.setItem("attendance-language", nextLanguage);
   }
 
+  function notifyPublicAttendancePage() {
+    window.localStorage.setItem("attendance-refresh", String(Date.now()));
+  }
+
   const summary = useMemo(() => {
     const todayRecords = records.filter((record) => record.workDate === today);
     return {
@@ -361,6 +371,7 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
       setEmployeeName("");
       setEmployeePin("");
       await loadEmployees();
+      notifyPublicAttendancePage();
     });
   }
 
@@ -376,18 +387,26 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
         throw new Error(result.error ?? t.toggleEmployeeError);
       }
       await loadEmployees();
+      notifyPublicAttendancePage();
     });
   }
 
   function deleteEmployee(employee: Employee) {
-    if (!window.confirm(`${t.deleteEmployeeConfirm} ${employee.name}?`)) return;
+    const confirmed = window.confirm(
+      `${t.deleteEmployeeConfirm}\n\n${employee.name}\n\n${t.deleteEmployeeWarning}\n${t.deleteEmployeeRecordsWarning}`,
+    );
+
+    if (!confirmed) return;
     run(async () => {
       const response = await fetch(`/api/admin/employees/${employee.id}`, { method: "DELETE" });
       const result = (await response.json()) as { message?: string; error?: string };
-      if (!response.ok) throw new Error(result.error ?? t.deleteEmployeeError);
+      if (!response.ok) {
+        throw new Error(response.status === 400 ? t.deleteEmployeeHasRecords : result.error ?? t.deleteEmployeeError);
+      }
       setNotice(result.message ?? t.employeeDeleted);
       await loadEmployees();
       await loadRecords();
+      notifyPublicAttendancePage();
     });
   }
 

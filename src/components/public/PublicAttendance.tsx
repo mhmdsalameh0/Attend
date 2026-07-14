@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { CheckCircle2, Clock3, Languages, LogIn, LogOut, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
@@ -188,7 +188,7 @@ export function PublicAttendance({
     return copy.noRecord as string;
   }, [copy.in, copy.noRecord, copy.out, language, selectedEmployee]);
 
-  async function refreshAttendance() {
+  const refreshAttendance = useCallback(async () => {
     const response = await fetch("/api/attendance/status", { cache: "no-store" });
     const result = (await response.json()) as { employees?: EmployeeStatus[]; error?: string };
 
@@ -200,7 +200,29 @@ export function PublicAttendance({
     setSelectedEmployee((current) =>
       current ? result.employees?.find((employee) => employee.id === current.id) ?? current : current,
     );
-  }
+  }, [copy.refreshError]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      refreshAttendance().catch(() => {
+        // Keep the public screen quiet if a background refresh briefly fails.
+      });
+    }, 15_000);
+
+    return () => window.clearInterval(id);
+  }, [refreshAttendance]);
+
+  useEffect(() => {
+    function onStorage(event: StorageEvent) {
+      if (event.key !== "attendance-refresh") return;
+      refreshAttendance().catch(() => {
+        // The interval refresh will try again shortly.
+      });
+    }
+
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [refreshAttendance]);
 
   function submit(action: "check-in" | "check-out") {
     if (!selectedEmployee || pin.length !== 4 || isPending) return;
@@ -285,7 +307,7 @@ export function PublicAttendance({
         </div>
       ) : null}
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label={copy.employees as string}>
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-label={copy.employees as string}>
         {employees.map((employee) => (
           <button
             key={employee.id}

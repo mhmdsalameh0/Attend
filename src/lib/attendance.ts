@@ -83,7 +83,6 @@ export async function getPublicAttendanceSnapshot() {
   const employees = await prisma.employee.findMany({
     where: { active: true },
     orderBy: { createdAt: "asc" },
-    take: 4,
     select: {
       id: true,
       name: true,
