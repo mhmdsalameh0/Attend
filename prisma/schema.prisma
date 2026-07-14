@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AttendanceStatus {
+  ON_TIME
+  LATE
+}
+
+model Employee {
+  id        String       @id @default(cuid())
+  name      String
+  pinHash   String
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  attendance Attendance[]
+
+  @@index([active])
+}
+
+model Attendance {
+  id           String           @id @default(cuid())
+  employeeId   String
+  workDate     String
+  checkIn      DateTime
+  checkOut     DateTime?
+  totalMinutes Int?
+  lateMinutes  Int              @default(0)
+  status       AttendanceStatus
+  note         String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  employee     Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, workDate])
+  @@index([workDate])
+  @@index([employeeId])
+}
