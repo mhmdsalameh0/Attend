@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { Download, FileText, Languages, Pencil, Plus, Trash2 } from "lucide-react";
 import { LogoutButton } from "@/components/LogoutButton";
 import { Button } from "@/components/ui/Button";
@@ -27,6 +27,22 @@ type AttendanceRecord = {
   status: "ON_TIME" | "LATE";
   note: string | null;
   employee: Employee;
+};
+
+type WeeklySummaryRow = {
+  employeeId: string;
+  employeeName: string;
+  daysWorked: number;
+  regularMinutes: number;
+  overtimeMinutes: number;
+  totalMinutes: number;
+  incompleteCount: number;
+};
+
+type WeeklySummary = {
+  weekStart: string;
+  weekEnd: string;
+  rows: WeeklySummaryRow[];
 };
 
 type AdminDashboardProps = {
@@ -108,6 +124,24 @@ const copy = {
     employeeSaved: "Employee saved.",
     employeeDeleted: "Employee deleted.",
     pinChanged: "PIN changed.",
+    weeklyTitle: "Weekly Hours Summary",
+    previousWeek: "Previous Week",
+    nextWeek: "Next Week",
+    currentWeek: "Current Week",
+    selectedWeek: "Selected week",
+    exportWeeklyPdf: "Export weekly summary to PDF",
+    weeklyPdfError: "Could not generate the weekly summary PDF.",
+    loadWeeklyError: "Could not load weekly summary.",
+    weeklyEmployee: "Employee filter",
+    weeklyTable: [
+      "Employee name",
+      "Days worked",
+      "Regular hours",
+      "Overtime hours",
+      "Total hours",
+      "Incomplete attendance",
+    ],
+    noWeeklyRows: "No employees match this weekly summary.",
   },
   ar: {
     eyebrow: "لوحة الإدارة",
@@ -181,6 +215,24 @@ const copy = {
     employeeSaved: "تم حفظ الموظف.",
     employeeDeleted: "تم حذف الموظف.",
     pinChanged: "تم تغيير الرقم السري.",
+    weeklyTitle: "\u0645\u0644\u062e\u0635 \u0633\u0627\u0639\u0627\u062a \u0627\u0644\u0623\u0633\u0628\u0648\u0639",
+    previousWeek: "\u0627\u0644\u0623\u0633\u0628\u0648\u0639 \u0627\u0644\u0633\u0627\u0628\u0642",
+    nextWeek: "\u0627\u0644\u0623\u0633\u0628\u0648\u0639 \u0627\u0644\u062a\u0627\u0644\u064a",
+    currentWeek: "\u0627\u0644\u0623\u0633\u0628\u0648\u0639 \u0627\u0644\u062d\u0627\u0644\u064a",
+    selectedWeek: "\u0627\u0644\u0623\u0633\u0628\u0648\u0639 \u0627\u0644\u0645\u062d\u062f\u062f",
+    exportWeeklyPdf: "\u062a\u0635\u062f\u064a\u0631 \u0645\u0644\u062e\u0635 \u0627\u0644\u0623\u0633\u0628\u0648\u0639 PDF",
+    weeklyPdfError: "\u062a\u0639\u0630\u0651\u0631 \u0625\u0646\u0634\u0627\u0621 PDF \u0644\u0645\u0644\u062e\u0635 \u0627\u0644\u0623\u0633\u0628\u0648\u0639.",
+    loadWeeklyError: "\u062a\u0639\u0630\u0651\u0631 \u062a\u062d\u0645\u064a\u0644 \u0645\u0644\u062e\u0635 \u0627\u0644\u0623\u0633\u0628\u0648\u0639.",
+    weeklyEmployee: "\u0641\u0644\u062a\u0631 \u0627\u0644\u0645\u0648\u0638\u0641",
+    weeklyTable: [
+      "\u0627\u0633\u0645 \u0627\u0644\u0645\u0648\u0638\u0641",
+      "\u0623\u064a\u0627\u0645 \u0627\u0644\u0639\u0645\u0644",
+      "\u0627\u0644\u0633\u0627\u0639\u0627\u062a \u0627\u0644\u0639\u0627\u062f\u064a\u0629",
+      "\u0627\u0644\u0648\u0642\u062a \u0627\u0644\u0625\u0636\u0627\u0641\u064a",
+      "\u0645\u062c\u0645\u0648\u0639 \u0627\u0644\u0633\u0627\u0639\u0627\u062a",
+      "\u0627\u0644\u062d\u0636\u0648\u0631 \u063a\u064a\u0631 \u0627\u0644\u0645\u0643\u062a\u0645\u0644",
+    ],
+    noWeeklyRows: "\u0644\u0627 \u064a\u0648\u062c\u062f \u0645\u0648\u0638\u0641\u0648\u0646 \u0645\u0637\u0627\u0628\u0642\u0648\u0646 \u0644\u0645\u0644\u062e\u0635 \u0647\u0630\u0627 \u0627\u0644\u0623\u0633\u0628\u0648\u0639.",
   },
 };
 
@@ -247,6 +299,20 @@ function getScheduleLabel(language: Language) {
     : "8:30 AM to 6:00 PM";
 }
 
+function addDaysToDateString(dateString: string, days: number) {
+  const [year, month, day] = dateString.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return date.toISOString().slice(0, 10);
+}
+
+function getMondayForDateString(dateString: string) {
+  const [year, month, day] = dateString.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const dayOfWeek = date.getUTCDay();
+  const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  return addDaysToDateString(dateString, -daysSinceMonday);
+}
+
 function formatDisplayTime(value: string | null, language: Language) {
   if (!value) return "-";
   return new Intl.DateTimeFormat(language === "ar" ? "ar-LB" : "en-US", {
@@ -265,11 +331,19 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
   const [month, setMonth] = useState(today.slice(0, 7));
   const [filterMode, setFilterMode] = useState<"date" | "month">("date");
   const [employeeId, setEmployeeId] = useState("");
+  const [weeklyEmployeeId, setWeeklyEmployeeId] = useState("");
+  const [weekStart, setWeekStart] = useState(getMondayForDateString(today));
+  const [weeklySummary, setWeeklySummary] = useState<WeeklySummary>({
+    weekStart: getMondayForDateString(today),
+    weekEnd: addDaysToDateString(getMondayForDateString(today), 6),
+    rows: [],
+  });
   const [notice, setNotice] = useState("");
   const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
   const [employeeName, setEmployeeName] = useState("");
   const [employeePin, setEmployeePin] = useState("");
   const [isPdfExporting, setIsPdfExporting] = useState(false);
+  const [isWeeklyPdfExporting, setIsWeeklyPdfExporting] = useState(false);
   const [isPending, startTransition] = useTransition();
   const t = copy[language];
 
@@ -324,6 +398,36 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
     setEmployees(result.employees);
   }
 
+  const loadWeeklySummary = useCallback(async (nextWeekStart = weekStart, nextEmployeeId = weeklyEmployeeId) => {
+    const params = new URLSearchParams({ weekStart: nextWeekStart });
+    if (nextEmployeeId) params.set("employeeId", nextEmployeeId);
+
+    const response = await fetch(`/api/admin/weekly-summary?${params.toString()}`, { cache: "no-store" });
+    const result = (await response.json()) as WeeklySummary | { error?: string };
+
+    if (!response.ok || !("rows" in result)) {
+      throw new Error("error" in result ? result.error ?? t.loadWeeklyError : t.loadWeeklyError);
+    }
+
+    setWeeklySummary(result);
+  }, [t.loadWeeklyError, weekStart, weeklyEmployeeId]);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      loadWeeklySummary().catch(() => {
+        setNotice(t.loadWeeklyError);
+      });
+    });
+
+    const id = window.setInterval(() => {
+      loadWeeklySummary().catch(() => {
+        // Keep the dashboard quiet if a background weekly refresh briefly fails.
+      });
+    }, 30_000);
+
+    return () => window.clearInterval(id);
+  }, [loadWeeklySummary, t.loadWeeklyError]);
+
   function run(action: () => Promise<void>) {
     setNotice("");
     startTransition(async () => {
@@ -355,6 +459,7 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
       setNotice(result.message ?? t.updated);
       setEditingRecord(null);
       await loadRecords();
+      await loadWeeklySummary();
     });
   }
 
@@ -366,6 +471,7 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
       if (!response.ok) throw new Error(result.error ?? t.deleteRecordError);
       setNotice(result.message ?? t.deleted);
       await loadRecords();
+      await loadWeeklySummary();
     });
   }
 
@@ -383,6 +489,7 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
       setEmployeeName("");
       setEmployeePin("");
       await loadEmployees();
+      await loadWeeklySummary();
       notifyPublicAttendancePage();
     });
   }
@@ -399,6 +506,7 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
         throw new Error(result.error ?? t.toggleEmployeeError);
       }
       await loadEmployees();
+      await loadWeeklySummary();
       notifyPublicAttendancePage();
     });
   }
@@ -418,6 +526,7 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
       setNotice(result.message ?? t.employeeDeleted);
       await loadEmployees();
       await loadRecords();
+      await loadWeeklySummary();
       notifyPublicAttendancePage();
     });
   }
@@ -435,6 +544,49 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
       if (!response.ok) throw new Error(result.error ?? t.changePinError);
       setNotice(result.message ?? t.pinChanged);
     });
+  }
+
+  function changeWeek(nextWeekStart: string) {
+    const normalizedWeekStart = getMondayForDateString(nextWeekStart);
+    setWeekStart(normalizedWeekStart);
+    run(() => loadWeeklySummary(normalizedWeekStart, weeklyEmployeeId));
+  }
+
+  function changeWeeklyEmployee(nextEmployeeId: string) {
+    setWeeklyEmployeeId(nextEmployeeId);
+    run(() => loadWeeklySummary(weekStart, nextEmployeeId));
+  }
+
+  async function downloadWeeklyPdf() {
+    setNotice("");
+    setIsWeeklyPdfExporting(true);
+    try {
+      const params = new URLSearchParams({ weekStart, language });
+      if (weeklyEmployeeId) params.set("employeeId", weeklyEmployeeId);
+      const response = await fetch(`/api/admin/weekly-summary/pdf?${params.toString()}`);
+
+      if (!response.ok) {
+        const result = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(result?.error ?? t.weeklyPdfError);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download =
+        language === "ar"
+          ? `\u0645\u0644\u062e\u0635-\u0633\u0627\u0639\u0627\u062a-\u0627\u0644\u0623\u0633\u0628\u0648\u0639-${weeklySummary.weekStart}.pdf`
+          : `weekly-hours-summary-${weeklySummary.weekStart}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : t.weeklyPdfError);
+    } finally {
+      setIsWeeklyPdfExporting(false);
+    }
   }
 
   function getExportParams() {
@@ -527,6 +679,79 @@ export function AdminDashboard({ initialEmployees, initialRecords, today }: Admi
             <FileText className="size-4" />
             {isPdfExporting ? t.generatingPdf : t.exportPdf}
           </Button>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-950">{t.weeklyTitle}</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {t.selectedWeek}: {weeklySummary.weekStart} - {weeklySummary.weekEnd}
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[auto_auto_auto_220px_auto]">
+            <Button variant="secondary" disabled={isPending} onClick={() => changeWeek(addDaysToDateString(weekStart, -7))}>
+              {t.previousWeek}
+            </Button>
+            <Button variant="secondary" disabled={isPending} onClick={() => changeWeek(getMondayForDateString(today))}>
+              {t.currentWeek}
+            </Button>
+            <Button variant="secondary" disabled={isPending} onClick={() => changeWeek(addDaysToDateString(weekStart, 7))}>
+              {t.nextWeek}
+            </Button>
+            <label className="text-sm">
+              {t.weeklyEmployee}
+              <select
+                className="mt-1 h-11 w-full rounded-xl border border-slate-200 px-3"
+                value={weeklyEmployeeId}
+                onChange={(event) => changeWeeklyEmployee(event.target.value)}
+              >
+                <option value="">{t.allEmployees}</option>
+                {employees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button disabled={isWeeklyPdfExporting} onClick={downloadWeeklyPdf}>
+              <FileText className="size-4" />
+              {isWeeklyPdfExporting ? t.generatingPdf : "PDF"}
+            </Button>
+          </div>
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[860px] text-sm">
+            <thead className="bg-slate-50 text-slate-500">
+              <tr>
+                {t.weeklyTable.map((heading) => (
+                  <th key={heading} className="px-4 py-3 font-semibold">
+                    {heading}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {weeklySummary.rows.map((row) => (
+                <tr key={row.employeeId}>
+                  <td className="px-4 py-3 font-semibold">{row.employeeName}</td>
+                  <td className="px-4 py-3">{row.daysWorked}</td>
+                  <td className="px-4 py-3">{formatDuration(row.regularMinutes, language)}</td>
+                  <td className="px-4 py-3">{formatDuration(row.overtimeMinutes, language)}</td>
+                  <td className="px-4 py-3">{formatDuration(row.totalMinutes, language)}</td>
+                  <td className="px-4 py-3">{row.incompleteCount}</td>
+                </tr>
+              ))}
+              {weeklySummary.rows.length === 0 ? (
+                <tr>
+                  <td className="px-4 py-10 text-center text-slate-500" colSpan={6}>
+                    {t.noWeeklyRows}
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
         </div>
       </section>
 
